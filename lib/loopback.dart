@@ -33,6 +33,22 @@ class Loopback {
   static Future<void> setParams(LoopbackParams p) =>
       _ch.invokeMethod('setParams', p.toMap());
 
+  // ✅ ADDED: chọn mic tai nghe dây hay mic máy
+  // ✅ UPDATED: thêm headsetBoost (tăng gain riêng cho mic tai nghe dây)
+  static Future<void> setPreferWiredMic(
+    bool preferWiredMic, {
+    double headsetBoost = 2.2,
+  }) => _ch.invokeMethod('setPreferWiredMic', {
+    'preferWiredMic': preferWiredMic,
+    'headsetBoost': headsetBoost,
+  });
+
+  // ✅ ADDED: hỏi native xem hiện đang cắm tai nghe dây/USB không
+  static Future<bool> isWiredPresent() async {
+    final v = await _ch.invokeMethod('isWiredPresent');
+    return v == true;
+  }
+
   static Stream<double> rmsStream() {
     _rmsStream ??= _ev.receiveBroadcastStream().map(
       (e) => (e is num) ? e.toDouble() : 0.0,

@@ -3,20 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'loopback.dart';
 
-void main() => runApp(const MyApp());
-
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData.dark(useMaterial3: false),
-      home: const Homepage(),
-    );
-  }
-}
-
 class Homepage extends StatefulWidget {
   const Homepage({super.key});
   @override
@@ -54,8 +40,47 @@ class _HomepageState extends State<Homepage> {
 
   Timer? _paramDebounce;
 
+  // ================== ✅ ADDED: Wired mic UI state ==================
+  bool wiredPresent = false; // đang cắm tai nghe dây/USB?
+  bool preferWiredMic = false; // switch: dùng mic tai nghe
+  Timer? _wiredPoll; // poll enable/disable switch
+
+  // ✅ ADDED: boost cho mic tai nghe (vì thường rất nhỏ)
+  double headsetBoost = 2.2;
+  // =================================================================
+
+  @override
+  void initState() {
+    super.initState();
+
+    // ✅ ADDED: poll xem có cắm wired không để enable/disable switch
+    _wiredPoll = Timer.periodic(const Duration(milliseconds: 500), (_) async {
+      try {
+        final v = await Loopback.isWiredPresent();
+        if (!mounted) return;
+
+        if (v != wiredPresent) {
+          setState(() => wiredPresent = v);
+
+          // nếu rút dây -> tắt preferWiredMic cho khỏi "kẹt"
+          if (!v && preferWiredMic) {
+            preferWiredMic = false;
+            try {
+              await Loopback.setPreferWiredMic(
+                false,
+                headsetBoost: headsetBoost,
+              );
+            } catch (_) {}
+            if (mounted) setState(() {});
+          }
+        }
+      } catch (_) {}
+    });
+  }
+
   @override
   void dispose() {
+    _wiredPoll?.cancel(); // ✅ ADDED
     _paramDebounce?.cancel();
     _rmsSub?.cancel();
     if (running) {
@@ -102,6 +127,14 @@ class _HomepageState extends State<Homepage> {
         }
         return;
       }
+
+      // ✅ ADDED: set input preference trước khi start (để native pick đúng)
+      try {
+        await Loopback.setPreferWiredMic(
+          preferWiredMic,
+          headsetBoost: headsetBoost,
+        );
+      } catch (_) {}
 
       await Loopback.start(voiceMode: voiceMode);
       await _pushParams();
@@ -271,6 +304,88 @@ class _HomepageState extends State<Homepage> {
                 ),
               ),
 
+              // ================== ✅ ADDED UI BLOCK START ==================
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                margin: const EdgeInsets.symmetric(horizontal: 16),
+                decoration: BoxDecoration(
+                  color: Colors.grey[900],
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.white12),
+                ),
+                child: Column(
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Text(
+                          'Mic tai nghe (wired)',
+                          style: TextStyle(color: Colors.white70),
+                        ),
+                        const SizedBox(width: 10),
+                        Switch(
+                          value: preferWiredMic,
+                          activeColor: Colors.cyanAccent,
+                          onChanged: (!wiredPresent)
+                              ? null
+                              : (v) async {
+                                  setState(() => preferWiredMic = v);
+                                  try {
+                                    await Loopback.setPreferWiredMic(
+                                      v,
+                                      headsetBoost: headsetBoost,
+                                    );
+                                  } catch (_) {}
+                                },
+                        ),
+                      ],
+                    ),
+                    Text(
+                      wiredPresent
+                          ? (preferWiredMic
+                                ? '✅ Input: mic tai nghe'
+                                : '✅ Input: mic điện thoại (default)')
+                          : '⚠️ Chỉ bật được khi cắm tai nghe dây/USB',
+                      style: const TextStyle(
+                        color: Colors.white38,
+                        fontSize: 12,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+
+                    // ✅ ADDED: slider boost khi dùng mic tai nghe
+                    if (wiredPresent && preferWiredMic) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        'Headset mic boost: x${headsetBoost.toStringAsFixed(1)}',
+                        style: const TextStyle(
+                          color: Colors.white38,
+                          fontSize: 12,
+                        ),
+                      ),
+                      Slider(
+                        value: headsetBoost,
+                        min: 1.0,
+                        max: 6.0,
+                        divisions: 50,
+                        activeColor: Colors.cyanAccent,
+                        onChanged: (v) async {
+                          setState(() => headsetBoost = v);
+                          try {
+                            await Loopback.setPreferWiredMic(
+                              true,
+                              headsetBoost: v,
+                            );
+                          } catch (_) {}
+                        },
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+
+              // ================== ✅ ADDED UI BLOCK END ==================
               const SizedBox(height: 18),
 
               Row(
